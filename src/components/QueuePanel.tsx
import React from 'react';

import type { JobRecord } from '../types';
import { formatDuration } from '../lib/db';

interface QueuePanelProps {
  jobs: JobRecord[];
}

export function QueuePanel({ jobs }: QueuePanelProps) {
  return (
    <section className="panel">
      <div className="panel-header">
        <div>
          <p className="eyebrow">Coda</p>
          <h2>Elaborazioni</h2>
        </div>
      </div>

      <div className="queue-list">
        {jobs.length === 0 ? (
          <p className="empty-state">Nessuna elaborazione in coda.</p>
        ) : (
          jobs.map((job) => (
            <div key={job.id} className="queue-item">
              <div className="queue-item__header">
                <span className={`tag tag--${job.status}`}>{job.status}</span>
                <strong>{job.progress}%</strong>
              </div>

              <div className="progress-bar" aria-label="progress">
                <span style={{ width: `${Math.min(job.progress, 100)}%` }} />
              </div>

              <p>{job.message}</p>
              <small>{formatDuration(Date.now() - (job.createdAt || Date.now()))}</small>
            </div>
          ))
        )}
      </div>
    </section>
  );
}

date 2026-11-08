@@ -1,0 +1,47 @@
+import React, { useRef, useState } from 'react';
+
+interface ImportPanelProps {
+  onImport: (files: FileList | File[]) => Promise<void>;
+}
+
+export function ImportPanel({ onImport }: ImportPanelProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || !files.length) return;
+    setIsBusy(true);
+    try {
+      await onImport(files);
+    } finally {
+      setIsBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <section className="panel import-panel">
+      <div>
+        <p className="eyebrow">Importazione</p>
+        <h2>Registrazioni audio</h2>
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".mp3,.m4a,.wav,.aac,.m4b,audio/*"
+        multiple
+        onChange={(event) => void handleFiles(event.target.files)}
+      />
+
+      <button type="button" className="primary" onClick={() => inputRef.current?.click()} disabled={isBusy}>
+        {isBusy ? 'Importazione…' : 'Carica registrazioni'}
+      </button>
+
+      <p className="helper-text">
+        Formati supportati: M4A, MP3, WAV, AAC.<br />
+        I file vengono salvati localmente e possono essere ripresi dopo la chiusura del browser.
+      </p>
+    </section>
+  );
+}

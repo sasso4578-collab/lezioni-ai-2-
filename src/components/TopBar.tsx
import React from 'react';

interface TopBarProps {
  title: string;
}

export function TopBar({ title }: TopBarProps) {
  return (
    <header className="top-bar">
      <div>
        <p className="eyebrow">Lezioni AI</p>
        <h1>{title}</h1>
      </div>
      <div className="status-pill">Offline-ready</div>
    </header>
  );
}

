@@ -1,0 +1,67 @@
+import type { JobRecord } from '../types';
+import { db } from './db';
+
+export async function createJob(recordingId: string, message = 'In attesa di importazione'): Promise<JobRecord> {
+  const id = crypto.randomUUID();
+  const now = Date.now();
+
+  const job: JobRecord = {
+    id,
+    recordingId,
+    status: 'queued',
+    progress: 0,
+    message,
+    createdAt: now,
+    updatedAt: now,
+    startedAt: undefined,
+    completedAt: undefined
+  };
+
+  await db.jobs.put(job);
+  return job;
+}
+
+export async function updateJob(recordingId: string, patch: Partial<JobRecord>): Promise<void> {
+  const job = await db.jobs.where('recordingId').equals(recordingId).first();
+  if (!job) return;
+
+  const updated: JobRecord = {
+    ...job,
+    ...patch,
+    updatedAt: Date.now()
+  };
+
+  await db.jobs.put(updated);
+}
+
+export async function setJobProgress(recordingId: string, progress: number, status: JobRecord['status'], message: string): Promise<void> {
+  const job = await db.jobs.where('recordingId').equals(recordingId).first();
+  if (!job) return;
+
+  await db.jobs.update(job.id, {
+    status,
+    progress,
+    message,
+    updatedAt: Date.now(),
+    startedAt: job.startedAt ?? Date.now(),
+    completedAt: status === 'completed' || status === 'failed' ? Date.now() : undefined
+  });
+}
+
+export async function getJobsForRecording(recordingId: string): Promise<JobRecord[]> {
+  return db.jobs.where('recordingId').equals(recordingId).sortBy('createdAt');
+}
+
+export async function getAllJobs(): Promise<JobRecord[]> {
+  return db.jobs.orderBy('updatedAt').reverse().toArray();
+}
+
+export async function hydratePendingJobs(): Promise<void> {
+  const pendingJobs = await db.jobs.where('status').anyOf(['queued', 'importing', 'processing']).toArray();
+
+  for (const job of pendingJobs) {
+    if (job.progress >= 100 && job.status !== 'failed') {
+      await db.jobs.update(job.id, { status: 'ready', updatedAt: Date.now(), completedAt: Date.now() });
+    }
+  }
+}

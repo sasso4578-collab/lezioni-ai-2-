@@ -1,0 +1,162 @@
+import React, { useEffect, useMemo, useState } from 'react';
+
+import { ImportPanel } from './components/ImportPanel';
+import { QueuePanel } from './components/QueuePanel';
+import { RecordingCard } from './components/RecordingCard';
+import { TopBar } from './components/TopBar';
+import { getAllowedAudioExtensions, createRecording, deleteRecording, exportRecording, getAllRecordings } from './lib/db';
+import { createJob, getAllJobs, setJobProgress } from './lib/queue';
+import type { JobRecord, RecordingRecord } from './types';
+
+export default function App() {
+  const [recordings, setRecordings] = useState<RecordingRecord[]>([]);
+  const [jobs, setJobs] = useState<JobRecord[]>([]);
+  const [availableExtensions] = useState<string[]>(getAllowedAudioExtensions());
+
+  const loadData = async () => {
+    const allRecordings = await getAllRecordings();
+    const allJobs = await getAllJobs();
+    setRecordings(allRecordings);
+    setJobs(allJobs);
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  const handleImport = async (inputFiles: FileList | File[]) => {
+    const list = Array.from(inputFiles);
+    const validFiles = list.filter((file) => {
+      const allowed = getAllowedAudioExtensions().some((ext) => file.name.toLowerCase().endsWith(ext));
+      const mimeAllowed = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/aac', 'audio/x-m4a'].includes(file.type.toLowerCase());
+      return allowed || mimeAllowed;
+    });
+
+    if (!validFiles.length) {
+      window.alert('Nessun file audio valido trovato. Formati supportati: M4A, MP3, WAV, AAC.');
+      return;
+    }
+
+    for (const file of validFiles) {
+      const recording = await createRecording(file, 'Generica', 'Archivio');
+      const job = await createJob(recording.id, 'Archivio locale in corso…');
+
+      const chunkCount = await new Promise<number>((resolve) => {
+        const chunks = Math.ceil(file.size / (5 * 1024 * 1024));
+        let processed = 0;
+
+        const interval = window.setInterval(async () => {
+          processed += 1;
+          const progress = Math.min(Math.round((processed / chunks) * 100), 99);
+          await setJobProgress(recording.id, progress, 'importing', `Importazione: ${progress}%`);
+
+          if (processed >= chunks) {
+            window.clearInterval(interval);
+            resolve(chunks);
+          }
+        }, 80);
+      });
+
+      await setJobProgress(recording.id, 100, 'ready', `File archiviato: ${file.name}`);
+      const entry = await window.indexedDB.databases?.();
+      console.log('IndexedDB available', entry);
+      await createJob(recording.id, `Archiviato in locale • ${chunkCount} blocchi`);
+      await loadData();
+    }
+  };
+
+  const handleDelete = async (recordingId: string) => {
+    await deleteRecording(recordingId);
+    await loadData();
+  };
+
+  const handleExport = async (recordingId: string) => {
+    try {
+      await exportRecording(recordingId);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Esportazione non disponibile.');
+    }
+  };
+
+  const stats = useMemo(() => {
+    const total = recordings.length;
+    const ready = recordings.filter((item) => item.status === 'ready').length;
+    const queued = recordings.filter((item) => item.status === 'queued').length;
+    const failed = jobs.filter((item) => item.status === 'failed').length;
+
+    return { total, ready, queued, failed };
+  }, [recordings, jobs]);
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand-box">
+          <div className="brand-mark">AI</div>
+          <div>
+            <p className="eyebrow">Lezioni AI</p>
+            <h2>Archivio</h2>
+          </div>
+        </div>
+
+        <nav className="nav-list">
+          <button type="button" className="nav-item active">Dashboard</button>
+          <button type="button" className="nav-item">Registrazioni</button>
+          <button type="button" className="nav-item">Trascrizioni</button>
+          <button type="button" className="nav-item">Dispense</button>
+          <button type="button" className="nav-item">Materie</button>
+          <button type="button" className="nav-item">Impostazioni</button>
+        </nav>
+      </aside>
+
+      <main className="main-panel">
+        <TopBar title="Dashboard" />
+
+        <section className="stats-grid">
+          <article className="stat-card">
+            <span>Registrazioni</span>
+            <strong>{stats.total}</strong>
+          </article>
+          <article className="stat-card">
+            <span>Pronte</span>
+            <strong>{stats.ready}</strong>
+          </article>
+          <article className="stat-card">
+            <span>In attesa</span>
+            <strong>{stats.queued}</strong>
+          </article>
+          <article className="stat-card">
+            <span>Errori</span>
+            <strong>{stats.failed}</strong>
+          </article>
+        </section>
+
+        <div className="content-grid">
+          <div className="left-column">
+            <ImportPanel onImport={handleImport} />
+            <QueuePanel jobs={jobs} />
+          </div>
+
+          <section className="panel recordings-panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Archivio</p>
+                <h2>Registrazioni</h2>
+              </div>
+              <span className="chip">{availableExtensions.join(', ')}</span>
+            </div>
+
+            <div className="recordings-list">
+              {recordings.length === 0 ? (
+                <p className="empty-state">Nessuna registrazione importata. Carica i primi file audio.</p>
+              ) : (
+                recordings.map((recording) => (
+                  <RecordingCard key={recording.id} recording={recording} onDelete={handleDelete} onExport={handleExport} />
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  );
+}
