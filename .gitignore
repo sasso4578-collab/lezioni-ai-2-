@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.DS_Store
+*.m4a
+*.mp3
+*.wav
+*.aac
+.env*
+!.env.example

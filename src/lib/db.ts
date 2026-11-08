@@ -1,24 +1,57 @@
-import Dexie, { Table } from 'dexie';
+import Dexie, { type Table } from 'dexie';
 
-import type { AudioChunkRecord, JobRecord, NoteRecord, RecordingRecord } from '../types';
+export type RecordingStatus = 'importing' | 'interrupted' | 'ready' | 'failed';
+export type JobStatus = RecordingStatus;
 
-class LezioniAIDatabase extends Dexie {
-  recordings!: Table<RecordingRecord, string>;
-  jobs!: Table<JobRecord, string>;
-  audioChunks!: Table<AudioChunkRecord, string>;
-  notes!: Table<NoteRecord, string>;
+export interface Recording {
+  id: string;
+  name: string;
+  originalName: string;
+  mimeType: string;
+  extension: string;
+  sizeBytes: number;
+  lastModified: number;
+  importedBytes: number;
+  totalChunks: number;
+  status: RecordingStatus;
+  createdAt: number;
+  updatedAt: number;
+  subject: string;
+  folder: string;
+  error?: string;
+}
+
+export interface ImportJob {
+  id: string;
+  recordingId: string;
+  status: JobStatus;
+  progress: number;
+  message: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AudioChunk {
+  id: string;
+  recordingId: string;
+  index: number;
+  blob: Blob;
+}
+
+class LocalDatabase extends Dexie {
+  recordings!: Table<Recording, string>;
+  jobs!: Table<ImportJob, string>;
+  chunks!: Table<AudioChunk, string>;
 
   constructor() {
-    super('lezioni-ai-db');
-
+    super('lezioni-ai-local');
     this.version(1).stores({
       recordings: '&id, status, createdAt, updatedAt',
-      jobs: '&id, recordingId, status, progress, updatedAt',
-      audioChunks: '&id, recordingId, chunkIndex, createdAt',
-      notes: '&id, recordingId, createdAt, updatedAt'
+      jobs: '&id, recordingId, status, updatedAt',
+      chunks: '&id, recordingId, index'
     });
   }
 }
 
-export const db = new LezioniAIDatabase();
-export const chunkSizeBytes = 5 * 1024 * 1024;
+export const db = new LocalDatabase();
+export const AUDIO_CHUNK_BYTES = 4 * 1024 * 1024;
