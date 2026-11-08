@@ -38,10 +38,21 @@ export interface AudioChunk {
   blob: Blob;
 }
 
+export interface Transcript {
+  id: string;
+  recordingId: string;
+  text: string;
+  segments: Array<{ startMs: number; endMs: number; text: string }>;
+  language: string;
+  model: string;
+  createdAt: number;
+}
+
 class LocalDatabase extends Dexie {
   recordings!: Table<Recording, string>;
   jobs!: Table<ImportJob, string>;
   chunks!: Table<AudioChunk, string>;
+  transcripts!: Table<Transcript, string>;
 
   constructor() {
     super('lezioni-ai-local');
@@ -49,6 +60,12 @@ class LocalDatabase extends Dexie {
       recordings: '&id, status, createdAt, updatedAt',
       jobs: '&id, recordingId, status, updatedAt',
       chunks: '&id, recordingId, index'
+    });
+    this.version(2).stores({
+      recordings: '&id, status, createdAt, updatedAt',
+      jobs: '&id, recordingId, status, updatedAt',
+      chunks: '&id, recordingId, index',
+      transcripts: '&id, recordingId, createdAt'
     });
   }
 }
